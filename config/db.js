@@ -1,27 +1,19 @@
-import mysql from "mysql2/promise";
-import dotenv from "dotenv";
-
+import { Sequelize } from 'sequelize';
+import dotenv from 'dotenv';
 dotenv.config();
 
-let db;
+// SQLite database setup
+export const sequelize = new Sequelize({
+    dialect: 'sqlite',
+    storage: './database.sqlite'  // database file
+});
 
 export const connectDB = async () => {
-  if (db) return db;
-
-  try {
-    db = await mysql.createConnection({
-      host: process.env.DB_HOST,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      database: process.env.DB_NAME,
-    });
-
-    console.log(" Connected to MySQL Database!");
-    return db;
-  } catch (error) {
-    console.error(" MySQL Connection Error:", error);
-    process.exit(1);
-  }
+    try {
+        await sequelize.authenticate();
+        console.log('SQLite DB Connected');
+    } catch (err) {
+        console.error('SQLite Connection Error:', err);
+        throw err;
+    }
 };
-
-export default connectDB;

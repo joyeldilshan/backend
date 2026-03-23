@@ -1,138 +1,70 @@
 import express from "express";
 import bcrypt from "bcryptjs";
-import connectDB from "../config/db.js";
+import { DataTypes } from "sequelize";
+import { sequelize } from "../config/db.js";
 
 const router = express.Router();
 
-/*  GET ALL USERS  ( Admin Dashboard ) */
+// User model
+const User = sequelize.define("User", {
+  name: { type: DataTypes.STRING, allowNull: false },
+  email: { type: DataTypes.STRING, allowNull: false, unique: true },
+  phone: { type: DataTypes.STRING, allowNull: false },
+  password: { type: DataTypes.STRING, allowNull: false },
+  role: { type: DataTypes.STRING, allowNull: false }
+});
+await User.sync();
+
+// GET all users
 router.get("/", async (req, res) => {
   try {
-    const db = await connectDB();
-    const [users] = await db.execute(
-      "SELECT id, name, email, phone, role FROM user"
-    );
+    const users = await User.findAll({ attributes: ["id", "name", "email", "phone", "role"] });
     res.json(users);
-  } catch (error) {
-    console.error("GET USERS ERROR:", error);
+  } catch (err) {
+    console.error("GET USERS ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-/* 
-   REGISTER USER / ADMIN
-   API: POST /api/users/register
-*/
+// REGISTER
 router.post("/register", async (req, res) => {
   try {
     const { name, email, phone, password, role } = req.body;
-
-    if (!name || !email || !phone || !password || !role) {
+    if (!name || !email || !phone || !password || !role)
       return res.status(400).json({ message: "All fields required" });
-    }
 
-    const db = await connectDB();
+    const exist = await User.findOne({ where: { email } });
+    if (exist) return res.status(400).json({ message: "Email already exists" });
 
-    // Check if user exists
-    const [exist] = await db.execute(
-      "SELECT * FROM user WHERE email = ?",
-      [email]
-    );
-
-    if (exist.length > 0) {
-      return res.status(400).json({ message: "Email already exists" });
-    }
-
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    await db.execute(
-      "INSERT INTO user (name, phone, email, password, role) VALUES (?, ?, ?, ?, ?)",
-      [name, phone, email, hashedPassword, role]
-    );
-
-    res.json({ message: "Registration successful!" });
-  } catch (error) {
-    console.error("REGISTER ERROR:", error);
+    const user = await User.create({ name, email, phone, password: hashedPassword, role });
+    res.json({ message: "Registration successful", user });
+  } catch (err) {
+    console.error("REGISTER ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-/* 
-   LOGIN USER
-   API: POST /api/users/login
-*/
+// LOGIN
 router.post("/login", async (req, res) => {
   try {
     const { email, password, role } = req.body;
-
     if (!email || !password || !role)
       return res.status(400).json({ message: "Email, password & role required" });
 
-    const db = await connectDB();
-    const [rows] = await db.execute("SELECT * FROM user WHERE email = ?", [email]);
+    const user = await User.findOne({ where: { email } });
+    if (!user) return res.status(400).json({ message: "User not found" });
 
-    if (rows.length === 0)
-      return res.status(400).json({ message: "User not found" });
-
-    const user = rows[0];
-
-    // Check role
-    if (user.role !== role)
-      return res.status(401).json({ message: "Invalid role" });
+    if (user.role !== role) return res.status(401).json({ message: "Invalid role" });
 
     const match = await bcrypt.compare(password, user.password);
-    if (!match)
-      return res.status(401).json({ message: "Invalid email or password" });
+    if (!match) return res.status(401).json({ message: "Invalid email or password" });
 
-    const { password: pw, ...safeUser } = user;
-
+    const safeUser = { ...user.dataValues };
+    delete safeUser.password;
     res.json({ message: "Login successful", user: safeUser });
-  } catch (error) {
-    console.error("LOGIN ERROR:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-
-/*  UPDATE USER ( Admin Panel ) API: PUT /api/users/:id */
-router.put("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, email, phone, password, role } = req.body;
-
-    const db = await connectDB();
-
-    if (password) {
-      const hashedPassword = await bcrypt.hash(password, 10);
-      await db.execute(
-        "UPDATE user SET name=?, email=?, phone=?, role=?, password=? WHERE id=?",
-        [name, email, phone, role, hashedPassword, id]
-      );
-    } else {
-      await db.execute(
-        "UPDATE user SET name=?, email=?, phone=?, role=? WHERE id=?",
-        [name, email, phone, role, id]
-      );
-    }
-
-    res.json({ message: "User updated successfully!" });
-  } catch (error) {
-    console.error("UPDATE ERROR:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-/* DELETE USER ( Admin Panel ) API: DELETE /api/users/:id */
-router.delete("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const db = await connectDB();
-    await db.execute("DELETE FROM user WHERE id = ?", [id]);
-
-    res.json({ message: "User deleted successfully!" });
-  } catch (error) {
-    console.error("DELETE ERROR:", error);
+  } catch (err) {
+    console.error("LOGIN ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
